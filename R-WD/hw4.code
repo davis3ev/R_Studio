@@ -1,0 +1,170 @@
+bank.df <- read.csv("UniversalBank.csv")
+
+dim(bank.df)
+
+str(bank.df)
+
+#convert Education to a factor and create dummy variables.
+bank.df$Education <- as.factor(bank.df$Education) # convert to factor
+dummies <- as.data.frame(model.matrix(~ 0 + Education, data = bank.df))
+bank.df <- cbind(bank.df[, -8], dummies)
+str(bank.df)
+
+t(t(names(bank.df)))
+
+# partition the data into training (60%) and validation (40%) sets
+set.seed(111)
+train.index <- sample(nrow(bank.df), nrow(bank.df) * 0.6)
+bank.train <- bank.df[train.index, ]
+bank.valid <- bank.df[-train.index, ]
+
+
+# new customer
+new.df <- data.frame(Age = 40, Experience = 10, Income = 84, Family = 2, CCAvg = 2, 
+                     Education1 = 0, Education2 = 1, Education3 = 0, Mortgage = 0, 
+                     Securities.Account = 0, CD.Account = 0, Online = 1, Credit.Card = 1)
+
+
+## normalize data
+# initialize normalized training, validation, and complete data frames to originals
+bank.train.norm <- bank.train
+bank.valid.norm <- bank.valid
+bank.df.norm <- bank.df
+
+t(t(names(bank.train)))
+str(bank.train)
+
+# use preProcess() from the caret package to normalize Age, Experience, Income, 
+#Family, CCAvg and Mortgage
+library(caret)
+norm.values <- preProcess(bank.train[, c(2:4,6:8)], method = c("center", "scale"))
+bank.train.norm[, c(2:4,6:8)] <- predict(norm.values, bank.train[, c(2:4,6:8)])
+bank.valid.norm[, c(2:4,6:8)] <- predict(norm.values, bank.valid[, c(2:4,6:8)])
+bank.df.norm[, c(2:4,6:8)] <- predict(norm.values, bank.df[, c(2:4,6:8)])
+new.df.norm <- predict(norm.values, new.df)
+
+
+t(t(names(bank.valid.norm)))
+
+#k-Nearest Neighbors for Classification
+#Using k=1
+library(FNN)
+nn <- knn(train = bank.train.norm[, c(2:4, 6:8, 10:16)], 
+          test = new.df.norm, 
+          cl = bank.train.norm[, 9], k = 1)
+row.names(bank.train)[attr(nn, "nn.index")]
+nn
+
+
+## measuring accuracy of different k-values
+library(caret)
+# initialize a data frame with two columns: k and accuracy
+accuracy.df <- data.frame(k = seq(1, 20, 1), accuracy = rep(0, 20))
+
+
+# compute knn for different k on validation set
+for (i in 1:20) {
+  knn.pred <- knn(train = bank.train.norm[, c(2:4, 6:8, 10:16)], 
+                  test = bank.valid.norm[, c(2:4, 6:8, 10:16)], 
+                  cl = bank.train.norm$Personal.Loan, k = i)
+  accuracy.df[i, 2] <- confusionMatrix(knn.pred, as.factor(bank.valid.norm$Personal.Loan), 
+                                       positive = "1")$overall[1]
+}
+
+
+accuracy.df
+
+
+library(caret)
+library(e1071)
+
+t(t(names(bank.df.norm)))
+
+# classifying a new household using the "best k" = 1
+knn.pred.new <- knn(bank.df.norm[, c(2:4, 6:8, 10:16)], 
+                    new.df.norm, 
+                    cl = bank.df.norm[, 9], k = 1)
+row.names(bank.df)[attr(knn.pred.new, "nn.index")]
+knn.pred.new
+
+#confusion matrix using best k on validation data
+knn.pred.best <- knn(bank.train.norm[, c(2:4, 6:8, 10:16)], 
+                     bank.valid.norm[, c(2:4, 6:8, 10:16)], 
+                     cl = bank.train.norm[, 9], k = 1, prob = TRUE)
+confusionMatrix(knn.pred.best, as.factor(bank.valid.norm$Personal.Loan), positive = "1"
+                
+                #discriminant analysis
+                # drop ID and ZIP.Code
+                bank.df <- bank.df[, -c(1, 5)]
+                
+                str(bank.df)
+                
+                # scatter plot
+                plot(CCAvg ~ Income, data = bank.df, col = ifelse(bank.df$Personal.Loan == 1, "red", "blue"))
+                legend("topleft", c("acceptor", "nonacceptor"), col = c("red", "blue"), pch = 1)
+                
+                # partition the data
+                bank.df$Personal.Loan <- as.factor(bank.df$Personal.Loan)
+                set.seed(1)
+                train.index <- sample(nrow(bank.df), nrow(bank.df) * 0.6)
+                bank.train <- bank.df[train.index, ]
+                bank.valid <- bank.df[-train.index, ]
+                valid.index <- as.numeric(row.names(bank.valid))
+                
+                t(t(names(bank.df)))
+                #delete one dummy var for $Education
+                bank.df <- bank.df[,-14]
+                bank.valid <- bank.valid[,-14]
+                bank.train <- bank.train[,-14]
+                # code for discriminant analysis
+                install.packages("DiscriMiner")
+                library(DiscriMiner)
+                bank.da <- linDA(bank.df[, c(1:6, 8:13)], bank.df$Personal.Loan, validation = "learntest", 
+                                 learn = train.index, 
+                                 test = valid.index)
+                
+                bank.da$functions
+                
+                
+                ##Propensities
+                
+                # classification scores, predicted classes, and probabilities
+                # compute probabilities manually
+                propensity.high <- exp(bank.da$scores[, "1"]) / (exp(bank.da$scores[, "0"]) + exp(bank.da$scores[, "1"]))
+                da.results <- data.frame(Actual = bank.valid$Personal.Loan, bank.da$classification, bank.da$scores, 
+                                         propensity.high = propensity.high)
+                options(scipen = 999)
+                head(da.results, 25)
+                
+                
+                # confusion matrix
+                confusionMatrix(bank.da$classification, 
+                                as.factor(bank.valid$Personal.Loan), 
+                                positive = "1")
+                
+                # lift chart
+                library(gains)
+                
+                gain <- gains(as.numeric(bank.valid$Personal.Loan), 
+                              exp(bank.da$scores[, 2]) / (exp(bank.da$scores[, 1]) + exp(bank.da$scores[, 2])), 
+                              groups = length(bank.valid))
+                
+                # plot lift chart
+                plot(c(0, gain$cume.pct.of.total * sum(as.numeric(bank.valid$Personal.Loan))) ~ c(0, gain$cume.obs),
+                     xlab = "# of loans", ylab = "Cumulative", main = "Lift Chart", type = "l")
+                lines(c(0, sum(as.numeric(bank.valid$Personal.Loan))) ~ c(0, nrow(bank.valid)), lty = 2)
+                
+                
+                # compute deciles and plot decile-wise lift chart
+                gain <- gains(as.numeric(bank.valid$Personal.Loan), 
+                              exp(bank.da$scores[, 2]) / (exp(bank.da$scores[, 1]) + exp(bank.da$scores[, 2])))
+                heights <- gain$mean.resp / mean(as.numeric(bank.valid$Personal.Loan))
+                dec.lift <- barplot(heights, names.arg = gain$depth, ylim = c(0, 8),
+                                    xlab = "Percentile", ylab = "Mean Response", main = "Decile-wise Lift Chart")
+                
+                #Testing prior probability; results virtually same
+                bank.da.prior <- linDA(bank.df[, c(1:6, 8:13)], bank.df$Personal.Loan, prior = c(.91, .09), validation = "learntest", 
+                                       learn = train.index, 
+                                       test = valid.index)
+                bank.da.prior$functions
+                
